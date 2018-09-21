@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-    StrEngL.Analyze.Composite
-    Copyright (C) 2016  Benjamin E. Taylor
+    Copyright (C) Benjamin E. Taylor
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by

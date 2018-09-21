@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-    StrEngL.Analyze.Buckling
-    Copyright (C) 2015  Benjamin E. Taylor
+    Copyright (C) Benjamin E. Taylor
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -23,6 +22,7 @@ from math import pi
 import numpy as np
 from scipy.linalg import eigvals
 
+
 def absBottom(i, iterable):
     """
     Returns the absolute bottom i values from sorted iterable while maintaining
@@ -30,7 +30,8 @@ def absBottom(i, iterable):
     """
     return sorted(iterable,key=abs)[:i]
 
-class LaminatedShells():
+
+class CurvedPlate:
     """
     This class defines an anisotropic curved plate buckling solution.
     Rerference:

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-    StrEngL.Composite.Laminate
-    Copyright (C) 2016  Benjamin E. Taylor
+    Copyright (C) Benjamin E. Taylor
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -46,7 +45,8 @@ def buildLam(matObj, thickness, angles, offset=0):
     return Laminate(plies, offset=offset)
 # ----------------------
 
-class Ply():
+
+class Ply:
     """defines a ply object"""
     def __init__(self, matObj, thickness, angle):
         self.mat = matObj
@@ -76,7 +76,8 @@ class Ply():
             newAngle += 180
         self.angle = newAngle
 
-class Laminate():
+
+class Laminate:
     """defines a laminate object"""
     def __init__(self, plies, offset=0):
         """plies = List of ply objects"""
