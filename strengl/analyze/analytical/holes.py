@@ -7,6 +7,53 @@ Created on Sat Aug 18 07:56:23 2018
 #import abc
 import numpy as np
 
+
+def fourier_series_coefficients(f, T, N, return_complex=True):
+    """
+    Ref: https://stackoverflow.com/questions/4258106/how-to-calculate-a-fourier-series-in-numpy
+
+    Calculates the first 2*N+1 Fourier series coeff. of a periodic function.
+
+    Given a periodic, function f(t) with period T, this function returns the
+    complex coefficients {c0,c1,c2,...}
+    such that:
+
+    f(t) ~= sum_{k=-N}^{N} c_k * exp(i*2*pi*k*t/T)
+
+    where we define c_{-n} = complex_conjugate(c_{n})
+
+    Refer to wikipedia for the relation between the real-valued and complex
+    valued coeffs at http://en.wikipedia.org/wiki/Fourier_series.
+
+    Parameters
+    ----------
+    f : the periodic function, a callable like f(t)
+    T : the period of the function f, so that f(0)==f(T)
+    N : the function will return the first N + 1 Fourier coeff.
+
+    Returns
+    -------
+    c : numpy 1-dimensional complex-valued array of size N+1
+
+    """
+    # From Shanon theoreom we must use a sampling freq. larger than the maximum
+    # frequency you want to catch in the signal.
+    f_sample = 2 * N
+
+    t = np.linspace(-T/2, T/2, f_sample, endpoint=False)
+
+    y = np.fft.rfft(f(t)) / t.size
+
+    # multiply odd terms by -1 to match SageMath
+    y[1::2] *= -1
+
+    if return_complex:
+        return y
+    else:
+        y *= 2
+        return y[0].real, y[1:].real, -y[1:].imag
+
+
 class Hole:
     """
     Class for defining a hole in an anisotropic plate for stress
@@ -28,30 +75,32 @@ class Hole:
         AFML-TR-73-145, Volume II, 1973.
 
     """
-    def __init__(self, r, lam):
+    def __init__(self, radius, thickness, a_matrix):
         """
         Class contructor.
         
-        :param r: hole radius
-        :param lam: <strengl.composite.laminate>
+        :param radius: hole radius
+        :param thickness: laminate thickness
+        :param a_matrix: <np.array> inverser laminate A-matrix
         """
-        self.r = r
-        self.lam = lam
+        self.r = radius
+        self.a = a_matrix
+        self.h = thickness
         self.mu1, self.mu2, self.mu1_bar, self.mu2_bar = self.roots()
-        
+
     def roots(self):
         """
         Finds the roots to the characteristic equation [Eq. A.2, Ref. 1]
         """
-        a11 = self.lam.a[0,0]
-        a16 = self.lam.a[0,2]
-        a12 = self.lam.a[0,1]
-        a66 = self.lam.a[2,2]
-        a26 = self.lam.a[1,2]
-        a22 = self.lam.a[1,1]
-        
+        a11 = self.a[0, 0]
+        a12 = self.a[0, 1]
+        a16 = self.a[0, 2]
+        a22 = self.a[1, 1]
+        a26 = self.a[1, 2]
+        a66 = self.a[2, 2]
+
         roots = np.roots([a11, -2*a16, (2*a12 + a66), -2*a26, a22])
-        
+
         if np.imag(roots[0]) >= 0.0:
             mu1 = roots[0]
             mu1_bar = roots[1]
@@ -60,7 +109,7 @@ class Hole:
             mu1_bar = roots[0]
         else:
             raise ValueError("mu1 cannot be solved")
-            
+
         if np.imag(roots[2]) >= 0.0:
             mu2 = roots[2]
             mu2_bar = roots[3]
@@ -69,9 +118,9 @@ class Hole:
             mu2_bar = roots[2]
         else:
             raise ValueError("mu2 cannot be solved")
-            
+
         return mu1, mu2, mu1_bar, mu2_bar
-        
+
     def ksi_1(self, z1):
         """
         Calculates the first mapping parameter [Eq. A.4 & Eq. A.5, Ref. 1]
@@ -79,14 +128,10 @@ class Hole:
         mu1 = self.mu1
         a = self.r
         b = self.r
-        
+
         ksi_1_pos = (z1 + np.sqrt(z1*z1 - a*a - mu1*mu1*b*b))/(a - 1j*mu1*b)
         ksi_1_neg = (z1 - np.sqrt(z1*z1 - a*a - mu1*mu1*b*b))/(a - 1j*mu1*b)
-        
-        #ksi_1 = []
-        #sign_1 = []
-        
-        #for ii in range(len(ksi_1_pos)):
+
         if np.abs(ksi_1_pos) >= 1.0 - 1.0e-15:
             ksi_1 = ksi_1_pos
             sign_1 = 1
@@ -97,8 +142,7 @@ class Hole:
             raise ValueError(
             "ksi_1 unsolvable:\n ksi_1_pos={0}, ksi_1_neg={1}".format(
             ksi_1_pos, ksi_1_neg))
-        
-        #return np.array(ksi_1), np.array(sign_1)
+
         return ksi_1, sign_1
 
     def ksi_2(self, z2):
@@ -108,14 +152,10 @@ class Hole:
         mu2 = self.mu2
         a = self.r
         b = self.r
-        
+
         ksi_2_pos = (z2 + np.sqrt(z2*z2 - a*a - mu2*mu2*b*b))/(a - 1j*mu2*b)
         ksi_2_neg = (z2 - np.sqrt(z2*z2 - a*a - mu2*mu2*b*b))/(a - 1j*mu2*b)
-        
-        #ksi_2 = []
-        #sign_2 = []        
-        
-        #for ii in range(len(ksi_2_pos)):
+
         if np.abs(ksi_2_pos) >= 1.0 - 1.0e-15:
             ksi_2 = ksi_2_pos
             sign_2 = 1
@@ -126,18 +166,17 @@ class Hole:
             raise ValueError(
             "ksi_1 unsolvable:\n ksi_1_pos={0}, ksi_1_neg={1}".format(
             ksi_2_pos, ksi_2_neg))
-        
-        #return np.array(ksi_2), np.array(sign_2)
+
         return ksi_2, sign_2
-    
+
     #@abc.abstractclassmethod()
     def phi_1_prime(self, z1):
         raise NotImplementedError("You must implement this function.")
-    
+
     #@abc.abstractclassmethod()
     def phi_2_prime(self, z2):
         raise NotImplementedError("You must implement this function.")
-        
+
     def stress(self, x, y):
         """
         Calculates the stress at point (x, y) in the plate. 
@@ -145,38 +184,39 @@ class Hole:
         """
         mu1 = self.mu1
         mu2 = self.mu2
-        
+
         z1 = x + mu1*y
         z2 = x + mu2*y
-        
+
         phi_1_prime = self.phi_1_prime(z1)
         phi_2_prime = self.phi_2_prime(z2)
-        
+
         sx = 2.0*np.real(mu1*mu1*phi_1_prime + mu2*mu2*phi_2_prime)
         sy = 2.0*np.real(phi_1_prime + phi_2_prime)
         sxy = -2.0*np.real(mu1*phi_1_prime + mu2*phi_2_prime)
-        
+
         return np.array([sx, sy, sxy])
 
-    
+
 
 class Unloaded(Hole):
     """
     Class for defining an unloaded hole in an anisotropic homogeneous plate
     with farfield forces (Nx, Ny, Nxy) [force / unit length] applied.
     """
-    
-    def __init__(self, r, lam, bypass):
+
+    def __init__(self, radius, thickness, a_matrix, bypass):
         """
         Class constructor.
         
-        :param r: hole radius
-        :param lam: <strengl.composite.Laminate>
+        :param radius: hole radius
+        :param thickness: laminate thickness
+        :param a_matrix: inverse laminate A-matrix
         :param bypass: [Nx, Ny, Nxy] force / unit length
         """
-        super().__init__(r, lam)
-        self.applied_stress = np.array(bypass)/lam.H
-        
+        super().__init__(radius, thickness, a_matrix)
+        self.applied_stress = np.array(bypass)/self.h
+
     def alpha(self):
         """
         Calculates the alpha loading term. [Eq. A.7, Ref. 1]
@@ -185,8 +225,8 @@ class Unloaded(Hole):
         sxy = self.applied_stress[2]
         r = self.r
 
-        return 1j*sxy*r/2 - sy*r/2 
-        
+        return 1j*sxy*r/2 - sy*r/2
+
     def beta(self):
         """
         Calculates the beta loading term. [Eq. A.7, Ref. 1]
@@ -194,9 +234,9 @@ class Unloaded(Hole):
         sx = self.applied_stress[0]
         sxy = self.applied_stress[2]
         r = self.r
-        
+
         return sxy*r/2 - 1j*sx*r/2
-        
+
     def phi_1_prime(self, z1):
         """
         Calculates derivative of the stress function. [Eq. A.8, Ref. 1]
@@ -208,13 +248,13 @@ class Unloaded(Hole):
         alpha = self.alpha()
         beta = self.beta()
         ksi_1, sign_1 = self.ksi_1(z1)
-        
+
         C1 = (beta - mu2*alpha)/(mu1 - mu2)
         eta1 = sign_1*np.sqrt(z1*z1 - a*a - mu1*mu1*b*b)
         kappa1 = 1/(a - 1j*mu1*b)
-        
+
         return -C1/(ksi_1**2)*(1 + z1/eta1)*kappa1
-                
+
     def phi_2_prime(self, z2):
         """
         Calculates derivative of the stress function. [Eq. A.8, Ref. 1]
@@ -226,128 +266,193 @@ class Unloaded(Hole):
         alpha = self.alpha()
         beta = self.beta()
         ksi_2, sign_2 = self.ksi_2(z2)
-        
+
         C2 = -(beta - mu1*alpha)/(mu1 - mu2)
         eta2 = sign_2*np.sqrt(z2*z2 - a*a - mu2*mu2*b*b)
         kappa2 = 1/(a - 1j*mu2*b)
-        
+
         return -C2/(ksi_2**2)*(1 + z2/eta2)*kappa2
-        
+
     def stress(self, x, y):
         """
         Calculates the laminate average stress at a point (x, y). 
         [Eq. A.9, Ref. 1]
         """
         sx, sy, sxy = super().stress(x, y)
-        
+
         sx_app = self.applied_stress[0]
         sy_app = self.applied_stress[1]
         sxy_app = self.applied_stress[2]
-        
+
         return np.array([sx + sx_app, sy + sy_app, sxy + sxy_app])
 
 
 class Loaded(Hole):
-    
-    def __init__(self, r, lam, bearing):
-        super().__init__(r, lam)
-        self.bearing = np.array(bearing)
-        self.px = self.bearing[0]
-        self.py = self.bearing[1]
-        self.p = np.sum(self.bearing**2)#/(2*r*lam.H) #stress of load?
-        self.alpha = np.arctan(self.py/self.px)
-        self.A, self.B, self.A_bar, self.B_bar = self.solve_constants()
-        
+    """
+    Class for defining an loaded hole in an anisotropic homogeneous plate
+    with bearing force (Px) applied [Fig. 10, Ref. 4].
+    """
+    def __init__(self, radius, thickness, a_matrix, bearing):
+        """
+        :param radius: Hole radius
+        :param thickness: laminate thickness
+        :param a_matrix: inverse laminate A-matrix
+        :param bearing: bearing force (x-dir only)
+        """
+        super().__init__(radius, thickness, a_matrix)
+        self.p = bearing
+        self.A, self.A_bar, self.B, self.B_bar = self.solve_constants()
+
+    def brg_load_x_component(self, thetas):
+        """
+        Cosine load distribution [Fig. 10, Ref. 4]
+        :param thetas: <np.array> angles
+        """
+        new_array = np.zeros(len(thetas))
+        for i, theta in enumerate(thetas):
+            # assume bearing load is only applied in x-dir
+            if -np.pi/2 <= theta <= np.pi/2:
+                new_array[i] = np.cos(theta)**2
+        return new_array
+
+    def brg_load_y_component(self, thetas):
+        """
+        Cosine load distribution [Fig. 10, Ref. 4]
+        :param thetas: <np.array> angles
+        """
+        new_array = np.zeros(len(thetas))
+        for i, theta in enumerate(thetas):
+            # assume bearing load is only applied in x-dir
+            if -np.pi/2 <= theta <= np.pi/2:
+                new_array[i] = np.cos(theta)*np.sin(theta)
+        return new_array
+
+    # def solve_constants(self):
+    #     mu1 = self.mu1
+    #     mu2 = self.mu2
+    #     mu1_bar = self.mu1_bar
+    #     mu2_bar = self.mu2_bar
+    #     px = self.bearing[0]
+    #     py = self.bearing[1]
+    #     h = self.lam.H
+    #     a11 = self.lam.a[0,0]
+    #     a22 = self.lam.a[1,1]
+    #     a12 = self.lam.a[0,1]
+    #     a16 = self.lam.a[0,2]
+    #     a26 = self.lam.a[1,2]
+    #     pi = np.pi
+    #
+    #     mu_mat = np.array([[1, 1, -1, -1],
+    #                        [mu1, mu2, -mu1_bar, -mu2_bar],
+    #                        [mu1**2, mu2**2, -mu1_bar**2, -mu2_bar**2],
+    #                        [1/mu1, 1/mu2, -1/mu1_bar, -1/mu2_bar]])
+    #
+    #     load_vec = np.array([[py/(2*pi*h*1j)],
+    #                          [-px/(2*pi*h*1j)],
+    #                          [-a16/a11*px/(2*pi*h*1j) - a12/a11*py/(2*pi*h*1j)],
+    #                          [a12/a22*px/(2*pi*h*1j) + a26/a22*py/(2*pi*h*1j)]])
+    #
+    #     return np.dot(np.linalg.inv(mu_mat), load_vec)
+
     def solve_constants(self):
-        mu1 = self.mu1
-        mu2 = self.mu2
-        mu1_bar = self.mu1_bar
-        mu2_bar = self. mu2_bar
-        px = self.bearing[0]
-        py = self.bearing[1]
-        h = self.lam.H
-        a11 = self.lam.a[0,0]
-        a22 = self.lam.a[1,1]
-        a12 = self.lam.a[0,1]
-        a16 = self.lam.a[0,2]
-        a26 = self.lam.a[1,2]
-        pi = np.pi
-        
-        mu_mat = np.array([[1, 1, -1, -1],
-                           [mu1, mu2, -mu1_bar, -mu2_bar],
-                           [mu1**2, mu2**2, -mu1_bar**2, -mu2_bar**2],
-                           [1/mu1, 1/mu2, -1/mu1_bar, -1/mu2_bar]])
-        
-        load_vec = np.array([[py/(2*pi*h*1j)],
-                             [-px/(2*pi*h*1j)],
-                             [-a16/a11*px/(2*pi*h*1j) - a12/a11*py/(2*pi*h*1j)],
-                             [a12/a22*px/(2*pi*h*1j) + a26/a22*py/(2*pi*h*1j)]])
-        
-        return np.dot(np.linalg.inv(mu_mat), load_vec)
-        
-    def series_term(self, k, m):
-        a = self.r
+        """
+        Eq. 37.5 [ref. 2] expanding complex terms and resolving for A, A_bar, B and B_bar (setting Px equal to zero)
+        """
+        R1, R2 = np.real(self.mu1), np.imag(self.mu1)
+        R3, R4 = np.real(self.mu2), np.imag(self.mu2)
         p = self.p
-        mu1 = self.mu1
-        mu2 = self.mu2
+        h = self.h
+        a11 = self.a[0, 0]
+        a12 = self.a[0, 1]
+        a22 = self.a[1, 1]
+        a16 = self.a[0, 2]
         pi = np.pi
-        
-        if k == 1:
-            if m == 2:
-                return a*p*1j*(1 + 1j*mu2)/(16*(mu2 - mu1))
-            elif m % 2 == 0:
-                # m is even                
-                return 0
-            elif m % 2 == 1:
-                # m is odd
-                return (-a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu2)/
-                        (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
-        elif k == 2:
-            if m == 2:
-                return -a*p*1j*(1 + 1j*mu1)/(16*(mu2 - mu1))
-            elif m % 2 == 0:
-                # m is even                
-                return 0
-            elif m % 2 == 1:
-                # m is odd
-                return (a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu1)/
-                        (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
-        
+
+        mu_mat = np.array([[0., 1., 0., 1.],
+                           [R2, R1, R4, R3],
+                           [2*R1*R2, R1**2 - R2**2, 2*R3*R4, R3**2 - R4**2],
+                           [R2/(R1**2 + R2**2), -R1/(R1**2 + R2**2), R4/(R3**2 + R4**2), -R3/(R3**2 + R4**2)]])
+
+        load_vec = p/(4.*pi*h)*np.array([[0.],
+                                        [1.],
+                                        [a16/a11],
+                                        [a12/a22]])
+
+        return np.dot(np.linalg.inv(mu_mat), load_vec)
+
+    # def series_term(self, k, m):
+    #     a = self.r
+    #     p = self.p/self.lam.H
+    #     mu1 = self.mu1
+    #     mu2 = self.mu2
+    #     pi = np.pi
+    #
+    #     if k == 1:
+    #         if m == 2:
+    #             return a*p*1j*(1 + 1j*mu2)/(16*(mu2 - mu1))
+    #         elif m % 2 == 0:
+    #             # m is even
+    #             return 0
+    #         elif m % 2 == 1:
+    #             # m is odd
+    #             return (-a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu2)/
+    #                     (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
+    #     elif k == 2:
+    #         if m == 2:
+    #             return -a*p*1j*(1 + 1j*mu1)/(16*(mu2 - mu1))
+    #         elif m % 2 == 0:
+    #             # m is even
+    #             return 0
+    #         elif m % 2 == 1:
+    #             # m is odd
+    #             return (a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu1)/
+    #                     (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
+
     def phi_1_prime(self, z1):
+        """
+        Calculates derivative of the stress function. [Eq. 37.6, Ref. 2]
+        """
+        p = self.p
+        h = self.h
         mu1 = self.mu1
-        a = self.r
-        A = self.A
-        A_bar = self.A_bar
-        ksi_1, sign_1 = self.ksi_1(z1)
-        
-        eta_1 = sign_1*np.sqrt(z1*z1 - a*a - a*a*mu1*mu1)
-        
-        phi_1_series = 0.
-        for m in range(1, 45 + 1):
-            A1m = self.series_term(1, m)
-            phi_1_series += m*A1m/(ksi_1**m)
-        
-        sai_1 = A + 1j*A_bar        
-        
-        return (sai_1 - phi_1_series)/eta_1
-        
-    def phi_2_prime(self, z2):
         mu2 = self.mu2
         a = self.r
-        B = self.B
-        B_bar = self.B_bar
+        b = self.r
+        A = self.A+1j*self.A_bar
+        ksi_1, sign_1 = self.ksi_1(z1)
+
+        eta_1 = sign_1*np.sqrt(z1*z1 - a*a - b*b*mu1*mu1)
+
+        m = np.arange(1, 45 + 1)
+
+        # request m[-2] because fourier_series_coefficients returns N+1 coefficients
+        alphas = -p*a/h*fourier_series_coefficients(self.brg_load_x_component, 2*np.pi, m[-2])
+        betas = p*b/h*fourier_series_coefficients(self.brg_load_y_component, 2*np.pi, m[-2])
+
+        return 1/eta_1*(A - np.sum(m*(betas - mu2*alphas)/(mu1 - mu2)/ksi_1**m))
+
+    def phi_2_prime(self, z2):
+        """
+        Calculates derivative of the stress function. [Eq. 37.6, Ref. 2]
+        """
+        p = self.p
+        h = self.h
+        mu1 = self.mu1
+        mu2 = self.mu2
+        a = self.r
+        b = self.r
+        B = self.B+1j*self.B_bar
         ksi_2, sign_2 = self.ksi_2(z2)
-        
-        eta_2 = sign_2*np.sqrt(z2*z2 - a*a - a*a*mu2*mu2)
-        
-        phi_2_series = 0.
-        for m in range(1, 45 + 1):
-            A2m = self.series_term(2, m)
-            phi_2_series += m*A2m/(ksi_2**m)
-            
-        sai_2 = B + 1j*B_bar
-            
-        return (sai_2 - phi_2_series)/eta_2
+
+        eta_2 = sign_2*np.sqrt(z2*z2 - a*a - b*b*mu2*mu2)
+
+        m = np.arange(1, 45 + 1)
+
+        # request m[-2] because fourier_series_coefficients returns N+1 coefficients
+        alphas = -p*a/h*fourier_series_coefficients(self.brg_load_x_component, 2*np.pi, m[-2])
+        betas = p*b/h*fourier_series_coefficients(self.brg_load_y_component, 2*np.pi, m[-2])
+
+        return 1/eta_2*(B + np.sum(m*(betas - mu1*alphas)/(mu1 - mu2)/ksi_2**m))
 
 
 
@@ -394,4 +499,3 @@ class Loaded(Hole):
 
 
 
-        
