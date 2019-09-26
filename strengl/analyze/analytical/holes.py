@@ -303,56 +303,48 @@ class Loaded(Hole):
         self.p = bearing
         self.A, self.A_bar, self.B, self.B_bar = self.solve_constants()
 
-    def brg_load_x_component(self, thetas):
-        """
-        Cosine load distribution [Fig. 10, Ref. 4]
-        :param thetas: <np.array> angles
-        """
-        new_array = np.zeros(len(thetas))
-        for i, theta in enumerate(thetas):
-            # assume bearing load is only applied in x-dir
-            if -np.pi/2 <= theta <= np.pi/2:
-                new_array[i] = np.cos(theta)**2
-        return new_array
+    def alphas(self, N):
 
-    def brg_load_y_component(self, thetas):
-        """
-        Cosine load distribution [Fig. 10, Ref. 4]
-        :param thetas: <np.array> angles
-        """
-        new_array = np.zeros(len(thetas))
-        for i, theta in enumerate(thetas):
-            # assume bearing load is only applied in x-dir
-            if -np.pi/2 <= theta <= np.pi/2:
-                new_array[i] = np.cos(theta)*np.sin(theta)
-        return new_array
+        h = self.h
+        p = self.p
 
-    # def solve_constants(self):
-    #     mu1 = self.mu1
-    #     mu2 = self.mu2
-    #     mu1_bar = self.mu1_bar
-    #     mu2_bar = self.mu2_bar
-    #     px = self.bearing[0]
-    #     py = self.bearing[1]
-    #     h = self.lam.H
-    #     a11 = self.lam.a[0,0]
-    #     a22 = self.lam.a[1,1]
-    #     a12 = self.lam.a[0,1]
-    #     a16 = self.lam.a[0,2]
-    #     a26 = self.lam.a[1,2]
-    #     pi = np.pi
-    #
-    #     mu_mat = np.array([[1, 1, -1, -1],
-    #                        [mu1, mu2, -mu1_bar, -mu2_bar],
-    #                        [mu1**2, mu2**2, -mu1_bar**2, -mu2_bar**2],
-    #                        [1/mu1, 1/mu2, -1/mu1_bar, -1/mu2_bar]])
-    #
-    #     load_vec = np.array([[py/(2*pi*h*1j)],
-    #                          [-px/(2*pi*h*1j)],
-    #                          [-a16/a11*px/(2*pi*h*1j) - a12/a11*py/(2*pi*h*1j)],
-    #                          [a12/a22*px/(2*pi*h*1j) + a26/a22*py/(2*pi*h*1j)]])
-    #
-    #     return np.dot(np.linalg.inv(mu_mat), load_vec)
+        def brg_load_x_component(thetas):
+            """
+            Cosine load distribution [Fig. 10, Ref. 4]
+            :param thetas: <np.array> angles
+            """
+            new_array = np.zeros(len(thetas))
+            for i, theta in enumerate(thetas):
+                # assume bearing load is only applied in x-dir
+                if -np.pi/2 <= theta <= np.pi/2:
+                    new_array[i] = np.cos(theta)**2
+            return new_array
+
+        coefficients = fourier_series_coefficients(brg_load_x_component, 2*np.pi, N, return_complex=False)[1]
+
+        return -p/(2*np.pi*h)*coefficients
+
+    def betas(self, N):
+
+        h = self.h
+        p = self.p
+
+        def brg_load_y_component(thetas):
+            """
+            Cosine load distribution [Fig. 10, Ref. 4]
+            :param thetas: <np.array> angles
+            """
+            new_array = np.zeros(len(thetas))
+            for i, theta in enumerate(thetas):
+                # assume bearing load is only applied in x-dir
+                if -np.pi/2 <= theta <= np.pi/2:
+                    new_array[i] = np.cos(theta)*np.sin(theta)
+            return new_array
+
+        m = np.arange(1, N + 1)
+        coefficients = fourier_series_coefficients(brg_load_y_component, 2*np.pi, N, return_complex=False)[2]
+
+        return 2*p/(np.pi*h*m**2*1j)*coefficients
 
     def solve_constants(self):
         """
@@ -380,40 +372,10 @@ class Loaded(Hole):
 
         return np.dot(np.linalg.inv(mu_mat), load_vec)
 
-    # def series_term(self, k, m):
-    #     a = self.r
-    #     p = self.p/self.lam.H
-    #     mu1 = self.mu1
-    #     mu2 = self.mu2
-    #     pi = np.pi
-    #
-    #     if k == 1:
-    #         if m == 2:
-    #             return a*p*1j*(1 + 1j*mu2)/(16*(mu2 - mu1))
-    #         elif m % 2 == 0:
-    #             # m is even
-    #             return 0
-    #         elif m % 2 == 1:
-    #             # m is odd
-    #             return (-a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu2)/
-    #                     (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
-    #     elif k == 2:
-    #         if m == 2:
-    #             return -a*p*1j*(1 + 1j*mu1)/(16*(mu2 - mu1))
-    #         elif m % 2 == 0:
-    #             # m is even
-    #             return 0
-    #         elif m % 2 == 1:
-    #             # m is odd
-    #             return (a*p*1j*(-1)**((m - 1)/2)*(2 + 1j*m*mu1)/
-    #                     (pi*m**2*(m**2 - 4)*(mu2 - mu1)))
-
     def phi_1_prime(self, z1):
         """
         Calculates derivative of the stress function. [Eq. 37.6, Ref. 2]
         """
-        p = self.p
-        h = self.h
         mu1 = self.mu1
         mu2 = self.mu2
         a = self.r
@@ -423,11 +385,10 @@ class Loaded(Hole):
 
         eta_1 = sign_1*np.sqrt(z1*z1 - a*a - b*b*mu1*mu1)
 
-        m = np.arange(1, 45 + 1)
-
-        # request m[-2] because fourier_series_coefficients returns N+1 coefficients
-        alphas = -p*a/h*fourier_series_coefficients(self.brg_load_x_component, 2*np.pi, m[-2])
-        betas = p*b/h*fourier_series_coefficients(self.brg_load_y_component, 2*np.pi, m[-2])
+        N = 45
+        m = np.arange(1, N + 1)
+        alphas = self.alphas(N)
+        betas = self.betas(N)
 
         return 1/eta_1*(A - np.sum(m*(betas - mu2*alphas)/(mu1 - mu2)/ksi_1**m))
 
@@ -435,8 +396,6 @@ class Loaded(Hole):
         """
         Calculates derivative of the stress function. [Eq. 37.6, Ref. 2]
         """
-        p = self.p
-        h = self.h
         mu1 = self.mu1
         mu2 = self.mu2
         a = self.r
@@ -446,11 +405,10 @@ class Loaded(Hole):
 
         eta_2 = sign_2*np.sqrt(z2*z2 - a*a - b*b*mu2*mu2)
 
-        m = np.arange(1, 45 + 1)
-
-        # request m[-2] because fourier_series_coefficients returns N+1 coefficients
-        alphas = -p*a/h*fourier_series_coefficients(self.brg_load_x_component, 2*np.pi, m[-2])
-        betas = p*b/h*fourier_series_coefficients(self.brg_load_y_component, 2*np.pi, m[-2])
+        N = 45
+        m = np.arange(1, N + 1)
+        alphas = self.alphas(N)
+        betas = self.betas(N)
 
         return 1/eta_2*(B + np.sum(m*(betas - mu1*alphas)/(mu1 - mu2)/ksi_2**m))
 
